@@ -1,0 +1,137 @@
+---
+title: "Lab6"
+author: Поташук Антон БИСО-01-20
+format: 
+    md:
+        output-file: README.md
+engine: knitr
+---
+
+## Цель работы
+
+1.  Закрепить навыки исследования данных журнала Windows Active Directory
+2.  Изучить структуру журнала системы Windows Active DirectoryЗекрепить практические навыки использования языка программирования R для обработки данных
+3.  Зекрепить практические навыки использования языка программирования R для обработки данных
+4.  Закрепить знания основных функций обработки данных экосистемы tidyverse языка R
+
+## Исходные данные
+
+1.  ОС Windows
+2.  RStudio
+
+## План
+
+1.  Запускаем RStudio
+2.  Качаем пакеты dplyr
+3.  Импортируем и подготавливаем данные
+4.  Анализируем данные
+5.  Отвечаем на вопросы
+6.  Создаём отчет
+
+## Ход работы
+
+Устанавливаем пакеты dplyr, xml2, tidyr, rvest и jsonlite с помощью команды install.packages("")
+
+Загружаем библиотеки
+
+```{r}
+library(dplyr)
+```
+
+```{r}
+library(xml2)
+```
+
+```{r}
+library(tidyr)
+```
+
+```{r}
+library(rvest)
+```
+
+```{r}
+library(jsonlite)
+```
+
+#### 1. Импортируйте данные в R.
+
+```{r}
+dataset <- "https://storage.yandexcloud.net/iamcth-data/dataset.tar.gz"
+download.file(dataset, destfile = tempf <- tempfile(fileext = ".tar.gz"), mode = "wb")
+tempdir <- tempdir()
+untar(tempf, exdir = tempdir)
+js_files <- list.files(tempdir, pattern="\\.json$", full.names = TRUE, recursive = TRUE)
+data_js <- stream_in(file(js_files))
+```
+
+#### 2. Привести датасеты в вид "аккуратных данных", преобразовать типы столбцов в соответствии с типом данных
+
+```{r}
+data_js <- data_js %>% mutate(`@timestamp` = as.POSIXct(`@timestamp`, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")) %>%rename(timestamp = `@timestamp`, metadata = `@metadata`)
+```
+
+#### 3. Просмотрите общую структуру данных с помощью функции glimpse()
+
+```{r}
+glimpse(data_js)
+```
+
+### Анализ
+
+#### 1. Раскройте датафрейм избавившись от вложенных датафреймов. Для обнаружения таких можно использовать функцию dplyr::glimpse() , а для раскрытия вложенности -- tidyr::unnest() . Обратите внимание, что при раскрытии теряются внешние названия колонок -- это можно предотвратить если использовать параметр tidyr::unnest(..., names_sep = ) .
+
+```{r}
+data_js <- data_js %>% unnest(c(metadata, event, log, winlog, ecs, host, agent), names_sep = ".")
+glimpse(data_js)
+```
+
+#### 2. Минимизируйте количество колонок в датафрейме -- уберите колоки с единственным значением параметра.
+
+```{r}
+data_js <- subset(data_js, select = - c(metadata.beat, metadata.type,metadata.version,metadata.topic,event.kind,winlog.api,agent.ephemeral_id,agent.hostname,agent.id,agent.version,agent.type))
+data_js %>% glimpse()
+```
+
+#### 3. Какое количество хостов представлено в данном датасете?
+
+1 хост WECServer
+
+```{r}
+data_js %>% select(host.name) %>% unique()
+```
+
+#### 4. Подготовьте датафрейм с расшифровкой Windows Event_ID, приведите типы данных к типу их значений.
+
+```{r}
+webpage_url <- "https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/appendix-l--events-to-monitor"
+webpage <- read_html(webpage_url)
+event_data <- html_table(webpage)[[1]]
+event_data <- event_data %>% rename(Current_Windows_Event_ID = `Current Windows Event ID`, Legacy_Windows_Event_ID = `Legacy Windows Event ID`, Potential_Criticality = `Potential Criticality`, Event_Summary = `Event Summary`)
+```
+
+```{r}
+event_data$Current_Windows_Event_ID <- as.integer(event_data$Current_Windows_Event_ID)
+```
+
+```{r}
+event_data$Legacy_Windows_Event_ID <- as.integer(event_data$Legacy_Windows_Event_ID)
+```
+
+```{r}
+glimpse(event_data)
+```
+
+#### 5. Есть ли в логе события с высоким и средним уровнем значимости? Сколько их?
+
+```{r}
+event_data %>% select(Potential_Criticality) %>% filter(Potential_Criticality == 'High' | Potential_Criticality == 'Medium') %>% group_by(Potential_Criticality) %>% count()
+```
+
+С высоким уровнем значимости 9 событий
+
+Со средним уровнем значимости 79 событий
+
+## Вывод
+
+В ходе выполнения практической работы мной были закреплены навыки использования языка R для обработки данных
