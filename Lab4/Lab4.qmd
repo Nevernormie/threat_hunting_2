@@ -1,0 +1,188 @@
+---
+title: "Lab4"
+author: Поташук Антон БИСО-01-20
+format: 
+    md:
+        output-file: README.md
+engine: knitr
+---
+
+## Цель работы
+
+1.  Зекрепить практические навыки использования языка программирования R для обработки данных
+2.  Закрепить знания основных функций обработки данных экосистемы tidyverse языка R
+3.  Закрепить навыки исследования метаданных DNS трафика
+
+## Исходные данные
+
+1.  ОС Windows
+2.  RStudio
+3.  "dns.log"
+4.  header.csv
+
+## План
+
+1.  Запускаем RStudio
+2.  Качаем пакет dplyr
+3.  Импортируем и подготавливаем данные DNS
+4.  Анализ данных
+5.  Обогащение данных
+
+## Ход работы
+
+Устанавливаем пакет dplyr с помощью команды install.packages(“dplyr”)
+
+Загружаем библиотеку dplyr
+
+```{r}
+library(dplyr)
+```
+
+### Импорт и подготовка данных DNS
+
+#### 1. Импортируйте данные DNS
+
+```{r}
+dns_data <- read.table("dns.log", header = FALSE, sep = "\t", quote = "", encoding="UTF-8")
+```
+
+#### 2. Добавьте пропущенные данные о структуре данных (назначении столбцов)
+
+В файле header.csv не хватает некоторых столбцов и данных о них, с помощью открытых источников добавим их вручную.
+
+```{r}
+colnames(dns_data) <- read.csv("header.csv", header = FALSE, skip = 1)$V1
+```
+
+#### 3. Просмотрите общую структуру данных с помощью функции glimpse()
+
+```{r}
+dns_data %>%
+  glimpse()
+```
+
+### Анализ данных
+
+#### 4. Сколько участников информационного обмена в сети Доброй Организации?
+
+```{r}
+orig_h <- unique(dns_data$`id.orig_h`)
+resp_h <- unique(dns_data$`id.resp_h`)
+
+hosts <- c(orig_h, resp_h)
+
+hosts %>%
+  unique() %>%
+  length()
+```
+
+#### 5. Какое соотношение участников обмена внутри сети и участников обращений к внешним ресурсам?
+
+```{r}
+internal_ip_pattern <- c("192.168.", "10.", "100.([6-9]|1[0-1][0-9]|12[0-7]).", "172.((1[6-9])|(2[0-9])|(3[0-1])).")
+internal_ips <- hosts[grep(paste(internal_ip_pattern, collapse = "|"), hosts)]
+internal_ips_cnt <- sum(hosts %in% internal_ips)
+external_ips_cnt <- length(hosts) - internal_ips_cnt
+
+ratio <- internal_ips_cnt / external_ips_cnt
+ratio
+```
+
+#### 6. Найдите топ-10 участников сети, проявляющих наибольшую сетевую активность.
+
+```{r}
+top_hosts <- dns_data %>%
+  group_by(id.orig_h) %>%
+  summarise(request_count = n()) %>%
+  arrange(desc(request_count)) %>%
+  top_n(10, request_count)
+
+print(top_hosts)
+```
+
+#### 7. Найдите топ-10 доменов, к которым обращаются пользователи сети и соответственное количество обращений
+
+```{r}
+top_domains <- dns_data %>%
+  group_by(query) %>%
+  summarise(request_count = n()) %>%
+  arrange(desc(request_count)) %>%
+  top_n(10, request_count)
+
+print(top_domains)
+```
+
+#### 8. Опеределите базовые статистические характеристики (функция summary()) интервала времени между последовательным обращениями к топ-10 доменам.
+
+```{r}
+top_domains_filtered <- dns_data %>% 
+  filter(tolower(query) %in% top_domains$query) %>%
+  arrange(ts)
+time_intervals <- diff(top_domains_filtered$ts)
+
+summary(time_intervals)
+```
+
+#### 9. Часто вредоносное программное обеспечение использует DNS канал в качестве канала управления, периодически отправляя запросы на подконтрольный злоумышленникам DNS сервер. По периодическим запросам на один и тот же домен можно выявить скрытый DNS канал. Есть ли такие IP адреса в исследуемом датасете?
+
+```{r}
+ip_domain_counts <- dns_data %>%
+  group_by(ip = `id.orig_h`, query) %>%
+  summarise(request_count = n()) %>%
+  filter(request_count > 1)
+```
+
+```{r}
+unique_ips_with_periodic_requests <- unique(ip_domain_counts$ip)
+
+unique_ips_with_periodic_requests %>% length()
+unique_ips_with_periodic_requests %>% head()
+```
+
+### Обогащение данных
+
+#### 10. Определите местоположение (страну, город) и организацию-провайдера для топ-10 доменов. Для этого можно использовать сторонние сервисы, например <https://v4.ifconfig.co/.>
+
+```{r}
+top_domains
+```
+
+1.  teredo.ipv6.microsoft.com
+
+-   IP: 20.112.250.133
+-   Country: United States
+-   Timezone: America/Chicago
+-   Organization: Microsoft
+
+2.  tools.google.com
+
+-   IP: 173.194.222.100
+-   Country: United States
+-   Timezone: America/Chicago
+-   Organization: Google
+
+3.  www.apple.com
+
+-   IP: 17.253.144.10
+-   Country: United States
+-   Timezone: America/Chicago
+-   Organization: Apple-Engineering
+
+4.  safebrowsing.clients.google.com
+
+-   IP: 64.233.164.100
+-   Country: United States
+-   Timezone: America/Chicago
+-   Organization: Google
+
+5.  44.206.168.192.in-addr.arpa
+
+-   IP: 44.206.168.192
+-   Country: United States
+-   City: Ashburn
+-   Timezone: America/New_York
+-   Organization: Amazon
+
+## Вывод
+
+В ходе лабораторной работы были импортированы, подготовлены, проанализированы и обогащены данные трафика DNS.
